@@ -1564,7 +1564,10 @@ window.activate_item_name_editor= function(el_item){
     }
     // files in trash cannot be renamed, user should be notified with an Alert.
     else if(path.dirname($(el_item).attr('data-path')) === window.trash_path){
-        UIAlert(i18n('items_in_trash_cannot_be_renamed'));
+        UIAlert({
+            type: 'warning',
+            message: i18n('items_in_trash_cannot_be_renamed')
+        });
         return;
     }
 

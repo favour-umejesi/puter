@@ -124,9 +124,15 @@ const UIWindowManageSessions = async function UIWindowManageSessions (options) {
                 el.remove();
                 return;
             }
-            UIAlert({ message: await resp.text() }).appendTo(w_body);
+            await UIAlert({
+                type: 'error',
+                message: await resp.text()
+            });
             } catch ( e ) {
-                UIAlert({ message: e.toString() }).appendTo(w_body);
+                await UIAlert({
+                    type: 'error',
+                    message: e.toString()
+                });
             }
         });
         el_actions.appendChild(el_btn_revoke);

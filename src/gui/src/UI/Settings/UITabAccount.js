@@ -24,6 +24,7 @@ import UIWindowConfirmUserDeletion from './UIWindowConfirmUserDeletion.js';
 import UIWindowManageSessions from '../UIWindowManageSessions.js';
 import UIWindow from '../UIWindow.js';
 import UINotification from '../UINotification.js';
+import UIAlert from '../UIAlert.js';
 
 // About
 export default {
@@ -155,25 +156,28 @@ export default {
             });    
         })
 
-        $el_window.find('.remove-profile-picture').on('click', function (e) {
+        $el_window.find('.remove-profile-picture').on('click', async function (e) {
             try {
                 // Remove profile picture
-                update_profile(window.user.username, {picture: null});
+                await update_profile(window.user.username, {picture: null});
                 
-                // Update UI elements to show default avatar
-                const defaultAvatar = window.icons['profile.svg'];
-                $el_window.find('.profile-picture').css('background-image', 'url(' + html_encode(defaultAvatar) + ')');
-                $('.profile-image').css('background-image', 'url(' + html_encode(defaultAvatar) + ')');
-                $('.profile-image').removeClass('profile-image-has-picture');
+                // Update UI using helper function
+                window.update_profile_picture_ui(null);
+                $el_window.find('.profile-picture').css('background-image', 'url(' + html_encode(window.icons['profile.svg']) + ')');
                 
                 // Hide the remove button
                 $el_window.find('.remove-profile-picture').hide();
+                
+                // Show success alert
+                await UIAlert({
+                    type: 'success',
+                    message: i18n('profile_picture_removed_successfully')
+                });
             } catch (error) {
                 console.error('Error removing profile picture:', error);
-                UINotification({
-                    title: i18n('profile_picture_remove_failed'),
-                    text: error?.message || i18n('error_unknown_cause'),
-                    icon: window.icons['error.svg'] || window.icons['bell.svg']
+                await UIAlert({
+                    type: 'error',
+                    message: i18n('profile_picture_remove_failed') + (error?.message ? ': ' + error.message : '')
                 });
             }
         })
@@ -181,24 +185,33 @@ export default {
         $el_window.on('file_opened', async function(e){
             let selected_file = Array.isArray(e.detail) ? e.detail[0] : e.detail;
             
+            // Disable upload button and show loading state
+            const $changeBtn = $el_window.find('.change-profile-picture');
+            const $removeBtn = $el_window.find('.remove-profile-picture');
+            const originalChangeBtnOpacity = $changeBtn.css('opacity');
+            $changeBtn.css('opacity', '0.5').css('pointer-events', 'none');
+            if ($removeBtn.length) {
+                $removeBtn.css('opacity', '0.5').css('pointer-events', 'none');
+            }
+            
             try {
-                // Optional validation: check file extension if we can detect it
-                // The dialog already filters for .png, .jpg, .jpeg, so we only validate
-                // if we can clearly detect an invalid extension
+                // Enhanced validation: check file extension
                 const fileName = selected_file.name || selected_file.fsentry_name || selected_file.path?.split('/').pop() || '';
                 const fileExtension = fileName.toLowerCase().split('.').pop();
                 const allowedExtensions = ['png', 'jpg', 'jpeg'];
                 
-                // Only reject if we have a filename with extension AND it's clearly invalid
-                // If we can't determine the extension, trust the dialog filtering
+                // Reject if we have a filename with extension AND it's clearly invalid
                 if (fileName && fileExtension && fileName.includes('.')) {
                     if (!allowedExtensions.includes(fileExtension)) {
-                        console.log('Invalid file extension detected:', fileExtension, 'from file:', selected_file);
-                        UINotification({
-                            title: i18n('profile_picture_invalid_file'),
-                            text: i18n('profile_picture_invalid_file'),
-                            icon: window.icons['error.svg'] || window.icons['bell.svg']
+                        await UIAlert({
+                            type: 'error',
+                            message: i18n('profile_picture_invalid_file')
                         });
+                        // Re-enable buttons
+                        $changeBtn.css('opacity', originalChangeBtnOpacity).css('pointer-events', 'auto');
+                        if ($removeBtn.length) {
+                            $removeBtn.css('opacity', '1').css('pointer-events', 'auto');
+                        }
                         return;
                     }
                 }
@@ -206,47 +219,70 @@ export default {
                 // Read the file
                 const profile_pic = await puter.fs.read(selected_file.path);
                 
-                // Validate file size (e.g., max 10MB for profile pictures)
+                // Validate file size (max 10MB for profile pictures)
                 const maxSize = 10 * 1024 * 1024; // 10MB
                 if (profile_pic.size && profile_pic.size > maxSize) {
-                    UINotification({
-                        title: i18n('profile_picture_upload_failed'),
-                        text: i18n('profile_picture_too_large'),
-                        icon: window.icons['error.svg'] || window.icons['bell.svg']
+                    await UIAlert({
+                        type: 'error',
+                        message: i18n('profile_picture_too_large')
                     });
+                    // Re-enable buttons
+                    $changeBtn.css('opacity', originalChangeBtnOpacity).css('pointer-events', 'auto');
+                    if ($removeBtn.length) {
+                        $removeBtn.css('opacity', '1').css('pointer-events', 'auto');
+                    }
                     return;
                 }
 
                 // blob to base64
                 const reader = new FileReader();
                 
-                reader.onerror = function() {
-                    UINotification({
-                        title: i18n('profile_picture_upload_failed'),
-                        text: i18n('error_unknown_cause'),
-                        icon: window.icons['error.svg'] || window.icons['bell.svg']
+                reader.onerror = async function() {
+                    await UIAlert({
+                        type: 'error',
+                        message: i18n('profile_picture_upload_failed')
                     });
                 };
 
-                reader.onloadend = function() {
+                reader.onloadend = async function() {
                     try {
                         // Validate that we got a data URL
                         if (!reader.result || typeof reader.result !== 'string' || !reader.result.startsWith('data:')) {
                             throw new Error('Invalid file data');
                         }
+                        
+                        // Enhanced MIME type validation
+                        const mimeType = reader.result.split(';')[0].split(':')[1];
+                        const allowedMimeTypes = ['image/png', 'image/jpeg', 'image/jpg'];
+                        if (!allowedMimeTypes.includes(mimeType)) {
+                            await UIAlert({
+                                type: 'error',
+                                message: i18n('profile_picture_invalid_file')
+                            });
+                            // Re-enable buttons
+                            $changeBtn.css('opacity', originalChangeBtnOpacity).css('pointer-events', 'auto');
+                            if ($removeBtn.length) {
+                                $removeBtn.css('opacity', '1').css('pointer-events', 'auto');
+                            }
+                            return;
+                        }
 
-                        // resizes the image to 150x150
+                        // Load and resize image with aspect ratio preservation
                         const img = new Image();
                         
-                        img.onerror = function() {
-                            UINotification({
-                                title: i18n('profile_picture_load_failed'),
-                                text: i18n('profile_picture_load_failed'),
-                                icon: window.icons['error.svg'] || window.icons['bell.svg']
+                        img.onerror = async function() {
+                            await UIAlert({
+                                type: 'error',
+                                message: i18n('profile_picture_load_failed')
                             });
+                            // Re-enable buttons
+                            $changeBtn.css('opacity', originalChangeBtnOpacity).css('pointer-events', 'auto');
+                            if ($removeBtn.length) {
+                                $removeBtn.css('opacity', '1').css('pointer-events', 'auto');
+                            }
                         };
 
-                        img.onload = function() {
+                        img.onload = async function() {
                             try {
                                 const canvas = document.createElement('canvas');
                                 const ctx = canvas.getContext('2d');
@@ -255,84 +291,134 @@ export default {
                                     throw new Error('Canvas context not available');
                                 }
                                 
-                                canvas.width = 150;
-                                canvas.height = 150;
-                                ctx.drawImage(img, 0, 0, 150, 150);
+                                // Resize image maintaining aspect ratio (max 150x150)
+                                const maxSize = 150;
+                                let width = img.width;
+                                let height = img.height;
+                                
+                                // Calculate dimensions maintaining aspect ratio
+                                if (width > height) {
+                                    if (width > maxSize) {
+                                        height = (height / width) * maxSize;
+                                        width = maxSize;
+                                    }
+                                } else {
+                                    if (height > maxSize) {
+                                        width = (width / height) * maxSize;
+                                        height = maxSize;
+                                    }
+                                }
+                                
+                                canvas.width = maxSize;
+                                canvas.height = maxSize;
+                                
+                                // Clear canvas (important for transparent images)
+                                ctx.clearRect(0, 0, maxSize, maxSize);
+                                
+                                // Center the image on canvas
+                                const x = (maxSize - width) / 2;
+                                const y = (maxSize - height) / 2;
+                                ctx.drawImage(img, x, y, width, height);
+                                
                                 const base64data = canvas.toDataURL('image/png');
                                 
                                 if (!base64data || !base64data.startsWith('data:image')) {
                                     throw new Error('Failed to convert image to base64');
                                 }
                                 
-                                // update profile picture
+                                // Update profile picture using helper function
+                                window.update_profile_picture_ui(base64data);
                                 $el_window.find('.profile-picture').css('background-image', 'url(' + html_encode(base64data) + ')');
-                                $('.profile-image').css('background-image', 'url(' + html_encode(base64data) + ')');
-                                $('.profile-image').addClass('profile-image-has-picture');
                                 
-                                // update profile picture
-                                update_profile(window.user.username, {picture: base64data});
+                                // Update profile picture in storage
+                                await update_profile(window.user.username, {picture: base64data});
                                 
                                 // Show or create the remove button
-                                let $removeBtn = $el_window.find('.remove-profile-picture');
-                                if($removeBtn.length === 0){
+                                let $removeBtnElement = $el_window.find('.remove-profile-picture');
+                                if($removeBtnElement.length === 0){
                                     // Create the button if it doesn't exist
-                                    $removeBtn = $(`<button class="button remove-profile-picture" style="margin-top: 10px;">${i18n('remove_profile_picture')}</button>`);
-                                    $el_window.find('.profile-picture').parent().append($removeBtn);
+                                    $removeBtnElement = $(`<button class="button remove-profile-picture" style="margin-top: 10px;">${i18n('remove_profile_picture')}</button>`);
+                                    $el_window.find('.profile-picture').parent().append($removeBtnElement);
                                     // Add click handler for the newly created button
-                                    $removeBtn.on('click', function (e) {
+                                    $removeBtnElement.on('click', async function (e) {
                                         try {
                                             // Remove profile picture
-                                            update_profile(window.user.username, {picture: null});
+                                            await update_profile(window.user.username, {picture: null});
                                             
-                                            // Update UI elements to show default avatar
-                                            const defaultAvatar = window.icons['profile.svg'];
-                                            $el_window.find('.profile-picture').css('background-image', 'url(' + html_encode(defaultAvatar) + ')');
-                                            $('.profile-image').css('background-image', 'url(' + html_encode(defaultAvatar) + ')');
-                                            $('.profile-image').removeClass('profile-image-has-picture');
+                                            // Update UI using helper function
+                                            window.update_profile_picture_ui(null);
+                                            $el_window.find('.profile-picture').css('background-image', 'url(' + html_encode(window.icons['profile.svg']) + ')');
                                             
                                             // Hide the remove button
-                                            $removeBtn.hide();
+                                            $removeBtnElement.hide();
+                                            
+                                            // Show success alert
+                                            await UIAlert({
+                                                type: 'success',
+                                                message: i18n('profile_picture_removed_successfully')
+                                            });
                                         } catch (error) {
                                             console.error('Error removing profile picture:', error);
-                                            UINotification({
-                                                title: i18n('profile_picture_remove_failed'),
-                                                text: error?.message || i18n('error_unknown_cause'),
-                                                icon: window.icons['error.svg'] || window.icons['bell.svg']
+                                            await UIAlert({
+                                                type: 'error',
+                                                message: i18n('profile_picture_remove_failed') + (error?.message ? ': ' + error.message : '')
                                             });
                                         }
                                     });
                                 } else {
-                                    $removeBtn.show();
+                                    $removeBtnElement.show();
                                 }
+                                
+                                // Re-enable buttons
+                                $changeBtn.css('opacity', originalChangeBtnOpacity).css('pointer-events', 'auto');
+                                $removeBtnElement.css('opacity', '1').css('pointer-events', 'auto');
+                                
+                                // Show success alert
+                                await UIAlert({
+                                    type: 'success',
+                                    message: i18n('profile_picture_uploaded_successfully')
+                                });
                             } catch (error) {
                                 console.error('Error processing image:', error);
-                                UINotification({
-                                    title: i18n('profile_picture_update_failed'),
-                                    text: error?.message || i18n('error_unknown_cause'),
-                                    icon: window.icons['error.svg'] || window.icons['bell.svg']
+                                await UIAlert({
+                                    type: 'error',
+                                    message: i18n('profile_picture_update_failed') + (error?.message ? ': ' + error.message : '')
                                 });
+                                // Re-enable buttons
+                                $changeBtn.css('opacity', originalChangeBtnOpacity).css('pointer-events', 'auto');
+                                if ($removeBtn.length) {
+                                    $removeBtn.css('opacity', '1').css('pointer-events', 'auto');
+                                }
                             }
                         };
                         
                         img.src = reader.result;
                     } catch (error) {
                         console.error('Error reading file:', error);
-                        UINotification({
-                            title: i18n('profile_picture_upload_failed'),
-                            text: error?.message || i18n('error_unknown_cause'),
-                            icon: window.icons['error.svg'] || window.icons['bell.svg']
+                        await UIAlert({
+                            type: 'error',
+                            message: i18n('profile_picture_upload_failed') + (error?.message ? ': ' + error.message : '')
                         });
+                        // Re-enable buttons
+                        $changeBtn.css('opacity', originalChangeBtnOpacity).css('pointer-events', 'auto');
+                        if ($removeBtn.length) {
+                            $removeBtn.css('opacity', '1').css('pointer-events', 'auto');
+                        }
                     }
                 };
 
                 reader.readAsDataURL(profile_pic);
             } catch (error) {
                 console.error('Error reading profile picture file:', error);
-                UINotification({
-                    title: i18n('profile_picture_upload_failed'),
-                    text: error?.message || i18n('error_unknown_cause'),
-                    icon: window.icons['error.svg'] || window.icons['bell.svg']
+                await UIAlert({
+                    type: 'error',
+                    message: i18n('profile_picture_upload_failed') + (error?.message ? ': ' + error.message : '')
                 });
+                // Re-enable buttons
+                $changeBtn.css('opacity', originalChangeBtnOpacity).css('pointer-events', 'auto');
+                if ($removeBtn.length) {
+                    $removeBtn.css('opacity', '1').css('pointer-events', 'auto');
+                }
             }
         })
     },

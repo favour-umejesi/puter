@@ -45,20 +45,46 @@ function UIAlert(options){
     return new Promise(async (resolve) => {
         // Normalize buttons: convert string array to object array
         if(options.buttons && Array.isArray(options.buttons) && options.buttons.length > 0){
-            options.buttons = options.buttons.map(btn => {
+            // First, check if any button explicitly has type 'primary'
+            const hasExplicitPrimary = options.buttons.some(btn => {
+                if(typeof btn === 'string') return false;
+                return btn.type === 'primary';
+            });
+            
+            // Normalize buttons
+            let assignedPrimary = false;
+            options.buttons = options.buttons.map((btn, index) => {
                 // If button is a string, convert to object
                 if(typeof btn === 'string'){
+                    // Only first button gets primary type by default (if no explicit primary exists)
+                    const shouldBePrimary = index === 0 && !hasExplicitPrimary && !assignedPrimary;
+                    if(shouldBePrimary) assignedPrimary = true;
                     return {
                         label: btn,
                         value: btn,
-                        type: 'primary' // Default type for string buttons
+                        type: shouldBePrimary ? 'primary' : undefined
                     };
                 }
                 // If button is already an object, ensure it has required properties
+                const buttonType = btn.type;
+                // If button explicitly has type 'primary', mark that we've seen a primary
+                if(buttonType === 'primary') {
+                    assignedPrimary = true;
+                }
+                // If no type specified and we don't have a primary yet, make first one primary
+                else if(!buttonType && !hasExplicitPrimary && !assignedPrimary && index === 0) {
+                    assignedPrimary = true;
+                    return {
+                        label: btn.label || btn.value || 'OK',
+                        value: btn.value ?? btn.label ?? 'OK',
+                        type: 'primary'
+                    };
+                }
+                
                 return {
                     label: btn.label || btn.value || 'OK',
                     value: btn.value ?? btn.label ?? 'OK',
-                    type: btn.type || 'primary'
+                    type: buttonType // Keep original type or undefined
                 };
             });
         }
@@ -154,12 +180,19 @@ function UIAlert(options){
         // buttons
         if(options.buttons && options.buttons.length > 0){
             h += `<div style="overflow:hidden; margin-top:20px;">`;
+            let hasAutofocus = false;
             for(let y=0; y<options.buttons.length; y++){
                 const btn = options.buttons[y];
-                h += `<button class="button button-block button-${html_encode(btn.type || 'primary')} alert-resp-button" 
+                const btnType = btn.type || '';
+                const btnClass = btnType ? `button-${btnType}` : '';
+                // Only first primary button gets autofocus
+                const shouldAutofocus = btn.type === 'primary' && !hasAutofocus;
+                if(shouldAutofocus) hasAutofocus = true;
+                
+                h += `<button class="button button-block ${btnClass} alert-resp-button" 
                                 data-label="${html_encode(btn.label)}"
                                 data-value="${html_encode(btn.value ?? btn.label)}"
-                                ${btn.type === 'primary' ? 'autofocus' : ''}
+                                ${shouldAutofocus ? 'autofocus' : ''}
                                 >${html_encode(btn.label)}</button>`;
             }
             h += `</div>`;
@@ -198,8 +231,11 @@ function UIAlert(options){
                 'backdrop-filter': 'blur(3px)',
             }
         });
-        // focus to primary btn
-        $(el_window).find('.button-primary').focus();
+        // focus to first primary btn (only if exists)
+        const primaryBtn = $(el_window).find('.button-primary').first();
+        if(primaryBtn.length > 0) {
+            primaryBtn.focus();
+        }
 
         // --------------------------------------------------------
         // Button pressed

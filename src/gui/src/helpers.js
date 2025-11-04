@@ -453,24 +453,16 @@ window.update_auth_data = async (auth_token, user)=>{
         blob.text()
         .then(text => {
             const profile = JSON.parse(text);
+            // Store raw value (encode only when injecting into HTML/CSS)
             if(profile.picture){
-                window.user.profile.picture = html_encode(profile.picture);
+                window.user.profile.picture = profile.picture;
             } else {
                 // Explicitly clear profile picture if it doesn't exist
                 window.user.profile.picture = undefined;
             }
 
-            // update profile picture in GUI
-            if(window.user.profile.picture){
-                $('.profile-pic').css('background-image', 'url('+html_encode(window.user.profile.picture)+')');
-                $('.profile-image').css('background-image', 'url('+html_encode(window.user.profile.picture)+')');
-                $('.profile-image').addClass('profile-image-has-picture');
-            } else {
-                // Use default avatar when no profile picture
-                $('.profile-pic').css('background-image', 'url('+window.icons['profile.svg']+')');
-                $('.profile-image').css('background-image', 'url('+window.icons['profile.svg']+')');
-                $('.profile-image').removeClass('profile-image-has-picture');
-            }
+            // update profile picture in GUI using helper function
+            window.update_profile_picture_ui(window.user.profile.picture);
         })
         .catch(error => {
             console.error('Error converting Blob to JSON:', error);
@@ -482,9 +474,7 @@ window.update_auth_data = async (auth_token, user)=>{
             // Set default avatar when profile doesn't exist
             window.user.profile = window.user.profile || {};
             window.user.profile.picture = undefined;
-            $('.profile-pic').css('background-image', 'url('+window.icons['profile.svg']+')');
-            $('.profile-image').css('background-image', 'url('+window.icons['profile.svg']+')');
-            $('.profile-image').removeClass('profile-image-has-picture');
+            window.update_profile_picture_ui(null);
         }
     });
 
@@ -1039,7 +1029,10 @@ window.copy_clipboard_items = async function(dest_path, dest_container_element){
                     }
                     else{
                         if(err.message){
-                            UIAlert(err.message)
+                            UIAlert({
+                                type: 'error',
+                                message: err.message
+                            })
                         }
                         item_with_same_name_already_exists = false;
                     }
@@ -1148,10 +1141,16 @@ window.copy_items = function(el_items, dest_path){
                     }
                     else{
                         if(err.message){
-                            UIAlert(err.message)
+                            UIAlert({
+                                type: 'error',
+                                message: err.message
+                            })
                         }
                         else if(err){
-                            UIAlert(err)
+                            UIAlert({
+                                type: 'error',
+                                message: String(err)
+                            })
                         }
                         item_with_same_name_already_exists = false;
                     }
@@ -1824,7 +1823,10 @@ window.init_upload_using_dialog = function(el_target_container, target_path = nu
                     window.upload_items(files, target_path);
                 }
                 catch(err){
-                    UIAlert(err.message ?? err)
+                    UIAlert({
+                        type: 'error',
+                        message: err.message ?? String(err)
+                    })
                 }
                 $('#upload-file-dialog').val('');
             }
@@ -2361,7 +2363,10 @@ window.unzipItem = async function(itemPath) {
         currentProgress += window.zippingProgressConfig.ZIPPING;
         progwin?.set_progress(currentProgress.toPrecision(2));
         if(err) {
-            UIAlert(e.message);
+            UIAlert({
+                type: 'error',
+                message: e.message
+            });
             // close progress window
             clearTimeout(progwin_timeout);
             setTimeout(() => {
@@ -2379,7 +2384,10 @@ window.unzipItem = async function(itemPath) {
                     currentProgress += perItemProgress;
                     progwin?.set_progress(currentProgress.toPrecision(2));
                 } catch (e) {
-                    UIAlert(e.message);
+                    UIAlert({
+                        type: 'error',
+                        message: e.message
+                    });
                 }
             });
             queuedFileWrites.length && puter.fs.upload(
@@ -2543,7 +2551,10 @@ window.delete_item_with_path = async function(path){
             recursive: true,
         });
     }catch(err){
-        UIAlert(err.responseText);
+        UIAlert({
+            type: 'error',
+            message: err.responseText || err.message || 'Delete failed.'
+        });
     }
 }
 
@@ -2774,41 +2785,49 @@ window.detectHostOS = function(){
 }
 
 window.update_profile = function(username, key_vals){
-    puter.fs.read('/'+username+'/Public/.profile').then((blob)=>{
-        blob.text()
-        .then(text => {
-            const profile = JSON.parse(text);
+    return new Promise((resolve, reject) => {
+        puter.fs.read('/'+username+'/Public/.profile').then((blob)=>{
+            blob.text()
+            .then(text => {
+                const profile = JSON.parse(text);
 
-            for (const key in key_vals) {
-                // Handle deletion: if value is null, undefined, or empty string, delete the property
-                if (key_vals[key] === null || key_vals[key] === undefined || key_vals[key] === '') {
-                    delete profile[key];
-                    // update window.user.profile
-                    if (window.user.profile) {
-                        delete window.user.profile[key];
+                for (const key in key_vals) {
+                    // Handle deletion: if value is null, undefined, or empty string, delete the property
+                    if (key_vals[key] === null || key_vals[key] === undefined || key_vals[key] === '') {
+                        delete profile[key];
+                        // update window.user.profile
+                        if (window.user.profile) {
+                            delete window.user.profile[key];
+                        }
+                    } else {
+                        profile[key] = key_vals[key];
+                        // update window.user.profile
+                        if (!window.user.profile) {
+                            window.user.profile = {};
+                        }
+                        window.user.profile[key] = key_vals[key];
                     }
-                } else {
-                    profile[key] = key_vals[key];
-                    // update window.user.profile
-                    if (!window.user.profile) {
-                        window.user.profile = {};
-                    }
-                    window.user.profile[key] = key_vals[key];
                 }
-            }
 
-            puter.fs.write('/'+username+'/Public/.profile', JSON.stringify(profile));
-        })
-        .catch(error => {
-            console.error('Error converting Blob to JSON:', error);
+                puter.fs.write('/'+username+'/Public/.profile', JSON.stringify(profile))
+                    .then(() => resolve())
+                    .catch(error => reject(error));
+            })
+            .catch(error => {
+                console.error('Error converting Blob to JSON:', error);
+                reject(error);
+            });
+        }).catch((e)=>{
+            if(e?.code === "subject_does_not_exist"){
+                // create .profile file
+                puter.fs.write('/'+username+'/Public/.profile', JSON.stringify({}))
+                    .then(() => resolve())
+                    .catch(error => reject(error));
+            } else {
+                console.log(e);
+                reject(e);
+            }
         });
-    }).catch((e)=>{
-        if(e?.code === "subject_does_not_exist"){
-            // create .profile file
-            puter.fs.write('/'+username+'/Public/.profile', JSON.stringify({}));
-        }
-        // Ignored
-        console.log(e);
     });
 }
 
