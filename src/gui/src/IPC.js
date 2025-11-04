@@ -164,9 +164,17 @@ const ipc_listener = async (event, handled) => {
             message: event.data.message,
             buttons: event.data.buttons,
             type: event.data.options?.type,
+            icon: event.data.options?.icon,
+            customUI: event.data.options?.customUI,
+            width: event.data.options?.width,
+            backdrop: event.data.options?.backdrop,
+            stay_on_top: event.data.options?.stay_on_top,
+            draggable_body: event.data.options?.draggable_body,
+            customBodyCSS: event.data.options?.customBodyCSS,
             window_options: {
                 parent_uuid: event.data.appInstanceID,
                 disable_parent_window: true,
+                ...event.data.options?.window_options,
             }
         })
 
@@ -1261,7 +1269,10 @@ const ipc_listener = async (event, handled) => {
                             success: function(res){
                             },
                             error: function(err){
-                                UIAlert(err && err.message ? err.message : "Download failed.");
+                                UIAlert({
+                                    type: 'error',
+                                    message: err && err.message ? err.message : "Download failed."
+                                });
                             }
                         });
                         item_with_same_name_already_exists = false;
@@ -1452,7 +1463,10 @@ const ipc_listener = async (event, handled) => {
                     success: function(res){
                     },
                     error: function(err){
-                        UIAlert(err && err.message ? err.message : "Download failed.");
+                        UIAlert({
+                            type: 'error',
+                            message: err && err.message ? err.message : "Download failed."
+                        });
                     }
                 });
                 item_with_same_name_already_exists = false;

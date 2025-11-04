@@ -453,14 +453,16 @@ window.update_auth_data = async (auth_token, user)=>{
         blob.text()
         .then(text => {
             const profile = JSON.parse(text);
+            // Store raw value (encode only when injecting into HTML/CSS)
             if(profile.picture){
-                window.user.profile.picture = html_encode(profile.picture);
+                window.user.profile.picture = profile.picture;
+            } else {
+                // Explicitly clear profile picture if it doesn't exist
+                window.user.profile.picture = undefined;
             }
 
-            // update profile picture in GUI
-            if(window.user.profile.picture){
-                $('.profile-pic').css('background-image', 'url('+window.user.profile.picture+')');
-            }
+            // update profile picture in GUI using helper function
+            window.update_profile_picture_ui(window.user.profile.picture);
         })
         .catch(error => {
             console.error('Error converting Blob to JSON:', error);
@@ -469,6 +471,10 @@ window.update_auth_data = async (auth_token, user)=>{
         if(e?.code === "subject_does_not_exist"){
             // create .profile file
             puter.fs.write('/'+user.username+'/Public/.profile', JSON.stringify({}));
+            // Set default avatar when profile doesn't exist
+            window.user.profile = window.user.profile || {};
+            window.user.profile.picture = undefined;
+            window.update_profile_picture_ui(null);
         }
     });
 
@@ -681,6 +687,7 @@ window.show_save_account_notice_if_needed = function(message){
             // Show the notice
             setTimeout(async () => {
                 const alert_resp = await UIAlert({
+                    type: 'info',
                     message: message ?? `<strong>Congrats on storing data!</strong><p>Don't forget to save your session! You are in a temporary session. Save session to avoid accidentally losing your work.</p>`,
                     body_icon: window.icons['reminder.svg'],
                     buttons:[
@@ -1022,7 +1029,10 @@ window.copy_clipboard_items = async function(dest_path, dest_container_element){
                     }
                     else{
                         if(err.message){
-                            UIAlert(err.message)
+                            UIAlert({
+                                type: 'error',
+                                message: err.message
+                            })
                         }
                         item_with_same_name_already_exists = false;
                     }
@@ -1131,10 +1141,16 @@ window.copy_items = function(el_items, dest_path){
                     }
                     else{
                         if(err.message){
-                            UIAlert(err.message)
+                            UIAlert({
+                                type: 'error',
+                                message: err.message
+                            })
                         }
                         else if(err){
-                            UIAlert(err)
+                            UIAlert({
+                                type: 'error',
+                                message: String(err)
+                            })
                         }
                         item_with_same_name_already_exists = false;
                     }
@@ -1155,13 +1171,47 @@ window.copy_items = function(el_items, dest_path){
         if (progwin) {
             if (copy_duration >= window.copy_progress_hide_delay) {
                 progwin.close();
+                // Show success alert after closing progress window
+                setTimeout(async () => {
+                    const itemCount = el_items.length;
+                    const message = itemCount > 1 
+                        ? `${itemCount} items copied successfully!`
+                        : `<strong>${html_encode($(el_items[0]).attr('data-name'))}</strong> copied successfully!`;
+                    await UIAlert({
+                        type: 'success',
+                        message: message
+                    });
+                }, 300);
             } else {
                 setTimeout(() => {
-                    setTimeout(() => {
+                    setTimeout(async () => {
                         progwin.close();
+                        // Show success alert after closing progress window
+                        setTimeout(async () => {
+                            const itemCount = el_items.length;
+                            const message = itemCount > 1 
+                                ? `${itemCount} items copied successfully!`
+                                : `<strong>${html_encode($(el_items[0]).attr('data-name'))}</strong> copied successfully!`;
+                            await UIAlert({
+                                type: 'success',
+                                message: message
+                            });
+                        }, 300);
                     }, Math.abs(window.copy_progress_hide_delay - copy_duration));
                 });
             }
+        } else {
+            // No progress window shown, show alert immediately
+            setTimeout(async () => {
+                const itemCount = el_items.length;
+                const message = itemCount > 1 
+                    ? `${itemCount} items copied successfully!`
+                    : `<strong>${html_encode($(el_items[0]).attr('data-name'))}</strong> copied successfully!`;
+                await UIAlert({
+                    type: 'success',
+                    message: message
+                });
+            }, 300);
         }
     })()
 }
@@ -1192,8 +1242,12 @@ window.delete_item = async function(el_item, descendants_only = false){
             descendantsOnly: descendants_only,
             recursive: true,
         });
+        
+        // Get item name for success message
+        const itemName = $(el_item).attr('data-name');
+        
         // fade out item 
-        $(`.item[data-uid='${$(el_item).attr('data-uid')}']`).fadeOut(150, function(){
+        $(`.item[data-uid='${$(el_item).attr('data-uid')}']`).fadeOut(150, async function(){
             // find all parent windows that contain this item
             let parent_windows = $(`.item[data-uid='${$(el_item).attr('data-uid')}']`).closest('.window');
             // remove item from DOM
@@ -1205,9 +1259,15 @@ window.delete_item = async function(el_item, descendants_only = false){
             });
             // update all shortcuts to this item
             $(`.item[data-shortcut_to_path="${html_encode($(el_item).attr('data-path'))}" i]`).attr(`data-shortcut_to_path`, '');
+            
+            // Show success alert
+            await UIAlert({
+                type: 'success',
+                message: `<strong>${html_encode(itemName)}</strong> deleted successfully!`
+            });
         });
     }catch(err){
-        UIAlert(err.responseText);
+        UIAlert({ type: 'error', message: err.responseText || err.message || 'Delete failed.' });
     }
 }
 
@@ -1348,7 +1408,7 @@ window.move_items = async function(el_items, dest_path, is_undo = false){
 
         // cannot move item to its own path, skip it
         if(path.dirname($(el_item).attr('data-path')) === dest_path){
-            await UIAlert(`<p>Moving <strong>${html_encode($(el_item).attr('data-name'))}</strong></p>Cannot move item to its current location.`)
+            await UIAlert({ type: 'warning', message: `<p>Moving <strong>${html_encode($(el_item).attr('data-name'))}</strong></p>Cannot move item to its current location.` })
 
             continue;
         }
@@ -1418,7 +1478,7 @@ window.move_items = async function(el_items, dest_path, is_undo = false){
                 // moving an item into a trashed directory? deny.
                 else if(dest_path.startsWith(window.trash_path)){
                     progwin?.close();
-                    UIAlert('Cannot move items into a deleted folder.');
+                    UIAlert({ type: 'error', message: 'Cannot move items into a deleted folder.' });
                     return;
                 }
 
@@ -1574,6 +1634,7 @@ window.move_items = async function(el_items, dest_path, is_undo = false){
                     item_with_same_name_already_exists = true;
 
                     const alert_resp = await UIAlert({
+                        type: 'question',
                         message: `<strong>${html_encode(err.entry_name)}</strong> already exists.`,
                         buttons:[
                             { label: i18n('replace'), type: 'primary', value: 'replace' },
@@ -1597,7 +1658,7 @@ window.move_items = async function(el_items, dest_path, is_undo = false){
                     item_with_same_name_already_exists = false;
                     // error message after source item has reappeared
                     $(el_item).show(0, function(){
-                        UIAlert(`<p>Moving <strong>${html_encode($(el_item).attr('data-name'))}</strong></p>${err.message ?? ''}`)
+                        UIAlert({ type: 'error', message: `<p>Moving <strong>${html_encode($(el_item).attr('data-name'))}</strong></p>${err.message ?? ''}` })
                     });
 
                     break;
@@ -1642,9 +1703,50 @@ window.move_items = async function(el_items, dest_path, is_undo = false){
     }
 
     if(progwin){
-        setTimeout(() => {
+        setTimeout(async () => {
             progwin.close();
+            // Show success alert after closing progress window
+            setTimeout(async () => {
+                const itemCount = el_items.length;
+                let message;
+                if(dest_path === window.trash_path){
+                    // Deleted (moved to trash)
+                    message = itemCount > 1 
+                        ? `${itemCount} items deleted successfully!`
+                        : `<strong>${html_encode($(el_items[0]).attr('data-name'))}</strong> deleted successfully!`;
+                } else {
+                    // Moved
+                    message = itemCount > 1 
+                        ? `${itemCount} items moved successfully!`
+                        : `<strong>${html_encode($(el_items[0]).attr('data-name'))}</strong> moved successfully!`;
+                }
+                await UIAlert({
+                    type: 'success',
+                    message: message
+                });
+            }, 300);
         }, window.copy_progress_hide_delay);
+    } else {
+        // No progress window shown, show alert immediately
+        setTimeout(async () => {
+            const itemCount = el_items.length;
+            let message;
+            if(dest_path === window.trash_path){
+                // Deleted (moved to trash)
+                message = itemCount > 1 
+                    ? `${itemCount} items deleted successfully!`
+                    : `<strong>${html_encode($(el_items[0]).attr('data-name'))}</strong> deleted successfully!`;
+            } else {
+                // Moved
+                message = itemCount > 1 
+                    ? `${itemCount} items moved successfully!`
+                    : `<strong>${html_encode($(el_items[0]).attr('data-name'))}</strong> moved successfully!`;
+            }
+            await UIAlert({
+                type: 'success',
+                message: message
+            });
+        }, 300);
     }
 }
 
@@ -1721,7 +1823,10 @@ window.init_upload_using_dialog = function(el_target_container, target_path = nu
                     window.upload_items(files, target_path);
                 }
                 catch(err){
-                    UIAlert(err.message ?? err)
+                    UIAlert({
+                        type: 'error',
+                        message: err.message ?? String(err)
+                    })
                 }
                 $('#upload-file-dialog').val('');
             }
@@ -1737,7 +1842,7 @@ window.upload_items = async function(items, dest_path){
     let opid;
 
     if(dest_path == window.trash_path){
-        UIAlert('Uploading to trash is not allowed!');
+        UIAlert({ type: 'error', message: 'Uploading to trash is not allowed!' });
         return;
     }
 
@@ -1800,8 +1905,34 @@ window.upload_items = async function(items, dest_path){
                 });
                 // close progress window after a bit of delay for a better UX
                 setTimeout(() => {
-                    setTimeout(() => {
+                    setTimeout(async () => {
                         upload_progress_window.close();
+                        
+                        // Show success alert
+                        let successMessage;
+                        const isArray = typeof items[Symbol.iterator] === 'function' && Array.isArray(items);
+                        const itemCount = isArray ? items.length : 1;
+                        
+                        if(itemCount > 1){
+                            successMessage = `${itemCount} files uploaded successfully!`;
+                        } else {
+                            // Single file - get the filename
+                            let fileName = 'File';
+                            if(isArray && items[0]?.path){
+                                fileName = path.basename(items[0].path);
+                            } else if(!isArray && items?.path){
+                                fileName = path.basename(items.path);
+                            } else if(!isArray && items?.name){
+                                fileName = items.name;
+                            }
+                            successMessage = `<strong>${html_encode(fileName)}</strong> uploaded successfully!`;
+                        }
+                        
+                        await UIAlert({
+                            type: 'success',
+                            message: successMessage
+                        });
+                        
                         window.show_save_account_notice_if_needed();
                     }, Math.abs(window.upload_progress_hide_delay));
                 })
@@ -1825,6 +1956,7 @@ window.upload_items = async function(items, dest_path){
 
 window.empty_trash = async function(){
     const alert_resp = await UIAlert({
+        type: 'question',
         message: i18n('empty_trash_confirmation'),
         buttons:[
             {
@@ -1870,8 +2002,15 @@ window.empty_trash = async function(){
             window. update_explorer_footer_item_count($(`.window[data-path="${window.trash_path}"]`))
             // close progress window
             clearTimeout(progwin_timeout);
-            setTimeout(() => {
+            setTimeout(async () => {
                 progwin?.close();
+                // Show success alert after closing progress window
+                setTimeout(async () => {
+                    await UIAlert({
+                        type: 'success',
+                        message: 'Trash emptied successfully!'
+                    });
+                }, 300);
             }, Math.max(0, window.copy_progress_hide_delay - (Date.now() - init_ts)));
         },
         error: async function (err){
@@ -2224,7 +2363,10 @@ window.unzipItem = async function(itemPath) {
         currentProgress += window.zippingProgressConfig.ZIPPING;
         progwin?.set_progress(currentProgress.toPrecision(2));
         if(err) {
-            UIAlert(e.message);
+            UIAlert({
+                type: 'error',
+                message: e.message
+            });
             // close progress window
             clearTimeout(progwin_timeout);
             setTimeout(() => {
@@ -2242,7 +2384,10 @@ window.unzipItem = async function(itemPath) {
                     currentProgress += perItemProgress;
                     progwin?.set_progress(currentProgress.toPrecision(2));
                 } catch (e) {
-                    UIAlert(e.message);
+                    UIAlert({
+                        type: 'error',
+                        message: e.message
+                    });
                 }
             });
             queuedFileWrites.length && puter.fs.upload(
@@ -2363,7 +2508,15 @@ window.rename_file = async(options, new_name, old_name, old_path, el_item, el_it
             // Re-sort all matching item containers
             $(`.item[data-uid='${$(el_item).attr('data-uid')}']`).parent('.item-container').each(function(){
                 window.sort_items(this, $(el_item).closest('.item-container').attr('data-sort_by'), $(el_item).closest('.item-container').attr('data-sort_order'));
-            })
+            });
+            
+            // Show success alert
+            setTimeout(async () => {
+                await UIAlert({
+                    type: 'success',
+                    message: `Renamed to <strong>${html_encode(new_name)}</strong> successfully!`
+                });
+            }, 300);
         },
         error: function (err){
             // reset to old name
@@ -2376,7 +2529,9 @@ window.rename_file = async(options, new_name, old_name, old_path, el_item, el_it
 
             //show error
             if(err.message){
-                UIAlert(err.message)
+                UIAlert({ type: 'error', message: err.message })
+            } else {
+                UIAlert({ type: 'error', message: 'Failed to rename file.' })
             }
         },
     });
@@ -2396,7 +2551,10 @@ window.delete_item_with_path = async function(path){
             recursive: true,
         });
     }catch(err){
-        UIAlert(err.responseText);
+        UIAlert({
+            type: 'error',
+            message: err.responseText || err.message || 'Delete failed.'
+        });
     }
 }
 
@@ -2627,29 +2785,49 @@ window.detectHostOS = function(){
 }
 
 window.update_profile = function(username, key_vals){
-    puter.fs.read('/'+username+'/Public/.profile').then((blob)=>{
-        blob.text()
-        .then(text => {
-            const profile = JSON.parse(text);
+    return new Promise((resolve, reject) => {
+        puter.fs.read('/'+username+'/Public/.profile').then((blob)=>{
+            blob.text()
+            .then(text => {
+                const profile = JSON.parse(text);
 
-            for (const key in key_vals) {
-                profile[key] = key_vals[key];
-                // update window.user.profile
-                window.user.profile[key] = key_vals[key];
+                for (const key in key_vals) {
+                    // Handle deletion: if value is null, undefined, or empty string, delete the property
+                    if (key_vals[key] === null || key_vals[key] === undefined || key_vals[key] === '') {
+                        delete profile[key];
+                        // update window.user.profile
+                        if (window.user.profile) {
+                            delete window.user.profile[key];
+                        }
+                    } else {
+                        profile[key] = key_vals[key];
+                        // update window.user.profile
+                        if (!window.user.profile) {
+                            window.user.profile = {};
+                        }
+                        window.user.profile[key] = key_vals[key];
+                    }
+                }
+
+                puter.fs.write('/'+username+'/Public/.profile', JSON.stringify(profile))
+                    .then(() => resolve())
+                    .catch(error => reject(error));
+            })
+            .catch(error => {
+                console.error('Error converting Blob to JSON:', error);
+                reject(error);
+            });
+        }).catch((e)=>{
+            if(e?.code === "subject_does_not_exist"){
+                // create .profile file
+                puter.fs.write('/'+username+'/Public/.profile', JSON.stringify({}))
+                    .then(() => resolve())
+                    .catch(error => reject(error));
+            } else {
+                console.log(e);
+                reject(e);
             }
-
-            puter.fs.write('/'+username+'/Public/.profile', JSON.stringify(profile));
-        })
-        .catch(error => {
-            console.error('Error converting Blob to JSON:', error);
         });
-    }).catch((e)=>{
-        if(e?.code === "subject_does_not_exist"){
-            // create .profile file
-            puter.fs.write('/'+username+'/Public/.profile', JSON.stringify({}));
-        }
-        // Ignored
-        console.log(e);
     });
 }
 

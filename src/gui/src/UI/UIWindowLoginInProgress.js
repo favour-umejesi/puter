@@ -36,7 +36,7 @@ async function UIWindowLoginInProgress(options){
 
         let h = '';
         h += `<div class="login-progress">`;
-            h += `<div class="profile-pic" style="background-color: #cecece; background-image: url('${profile_pic}'); width: 70px; height: 70px; background-position: center; background-size: cover; border-radius: 50px; margin-bottom: 15px; margin-top: 40px;"></div>`;
+            h += `<div class="profile-pic" style="background-color: #cecece; background-image: url('${html_encode(profile_pic)}'); width: 70px; height: 70px; background-position: center; background-size: cover; border-radius: 50px; margin-bottom: 15px; margin-top: 40px;"></div>`;
             h += `<h1 style="text-align: center;
             font-size: 17px;
             padding: 10px;
