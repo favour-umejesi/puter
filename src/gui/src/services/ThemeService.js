@@ -122,6 +122,12 @@ export class ThemeService extends Service {
         this.root.style.setProperty('--primary-alpha', s.alpha);
         this.root.style.setProperty('--primary-color', s.light_text ? 'white' : '#373e44');
 
+        // Calculate sidebar title color based on background lightness for WCAG contrast
+        // Lightness values above 50% need darker text, below 50% need lighter text
+        // Using a threshold around 60% for better contrast safety margin
+        const sidebarTitleColor = s.lig > 60 ? '#555c61' : '#e8eaed';
+        this.root.style.setProperty('--window-sidebar-title-color', sidebarTitleColor);
+
         // TODO: Should we debounce this to reduce traffic?
         this.#broadcastService.sendBroadcast('themeChanged', {
             palette: {
