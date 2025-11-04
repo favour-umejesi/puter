@@ -37,7 +37,7 @@ async function UIWindowSessionList(options){
                     const l_user = window.logged_in_users[index];
                     h += `<div data-uuid="${l_user.uuid}" class="session-entry" style="display: flex; padding: 15px 10px;">`;
                         // profile picture
-                        h += `<div class="profile-picture" style="background-color: #cbced1; width: 30px; height: 30px; margin:0; margin-right: 10px; background-image: url('${l_user.profile.picture ?? window.icons['profile.svg']}');"></div>`;
+                        h += `<div class="profile-picture" style="background-color: #cbced1; width: 30px; height: 30px; margin:0; margin-right: 10px; background-image: url('${html_encode(l_user.profile?.picture ?? window.icons['profile.svg'])}');"></div>`;
                         h += `<div style="display: flex; align-items: center;">${l_user.username}</div>`;
                     h += `</div>`;
                 }

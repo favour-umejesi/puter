@@ -462,8 +462,8 @@ window.update_auth_data = async (auth_token, user)=>{
 
             // update profile picture in GUI
             if(window.user.profile.picture){
-                $('.profile-pic').css('background-image', 'url('+window.user.profile.picture+')');
-                $('.profile-image').css('background-image', 'url('+window.user.profile.picture+')');
+                $('.profile-pic').css('background-image', 'url('+html_encode(window.user.profile.picture)+')');
+                $('.profile-image').css('background-image', 'url('+html_encode(window.user.profile.picture)+')');
                 $('.profile-image').addClass('profile-image-has-picture');
             } else {
                 // Use default avatar when no profile picture
