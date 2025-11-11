@@ -690,7 +690,10 @@ async function UIWindow(options) {
             try{
                 window.validate_fsentry_name(filename)
             }catch(err){
-                UIAlert(err.message, 'error', 'OK')
+                UIAlert({
+                    type: 'error',
+                    message: err.message
+                });
                 return;
             }
             const target_path = path.join($(el_window).attr('data-path'), filename);
@@ -3018,7 +3021,10 @@ window.update_window_path = async function(el_window, target_path){
                 }
             });
         }catch(err){
-            UIAlert(err.responseText)
+            UIAlert({
+                type: 'error',
+                message: err.responseText || err.message || 'Operation failed.'
+            })
 
             // todo optim: this is dumb because updating the window should only happen if this /readdir request is successful,
             // in that case there is no need for using update_window_path on error!!

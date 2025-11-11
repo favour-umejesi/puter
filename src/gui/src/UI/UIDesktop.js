@@ -1138,7 +1138,7 @@ async function UIDesktop(options){
 
         // user options menu
         ht += `<div class="toolbar-btn user-options-menu-btn profile-pic" style="display:block;">`;
-            ht += `<div class="profile-image ${window.user?.profile?.picture && 'profile-image-has-picture'}" style="border-radius: 50%; background-image:url(${window.user?.profile?.picture || window.icons['profile.svg']}); box-sizing: border-box; width: 17px !important; height: 17px !important; background-size: contain; background-repeat: no-repeat; background-position: center; background-position: center; background-size: cover;"></div>`;
+            ht += `<div class="profile-image ${window.user?.profile?.picture && 'profile-image-has-picture'}" style="border-radius: 50%; background-image:url(${html_encode(window.user?.profile?.picture || window.icons['profile.svg'])}); box-sizing: border-box; width: 17px !important; height: 17px !important; background-size: contain; background-repeat: no-repeat; background-position: center; background-position: center; background-size: cover;"></div>`;
         ht += `</div>`;
     ht += `</div>`;
 
@@ -1150,6 +1150,9 @@ async function UIDesktop(options){
 
     // adjust window container to take into account the toolbar height
     $('.window-container').css('top', window.toolbar_height);
+
+    // Initialize toolbar auto-hide feature
+    initToolbarAutoHide();
 
     // track: checkpoint
     //-----------------------------
@@ -1470,7 +1473,7 @@ $(document).on('click', '.user-options-menu-btn', async function(e){
         }
     });
 
-    UIContextMenu({
+    const contextMenu = UIContextMenu({
         id: 'user-options-menu',
         parent_element: parent_element,
         position: {top: pos.top + 28, left: pos.left + pos.width - 15},
@@ -1551,7 +1554,31 @@ $(document).on('click', '.user-options-menu-btn', async function(e){
                 }
             },
         ]
-    }); 
+    });
+    
+    // Keep toolbar visible while context menu is open
+    if (contextMenu) {
+        // Show toolbar when menu opens
+        if (window.showToolbar) {
+            window.showToolbar();
+        }
+        
+        // Handle menu close
+        if (contextMenu.onClose) {
+            const originalOnClose = contextMenu.onClose;
+            contextMenu.onClose = function(...args) {
+                // Start hide timer when menu closes (if mouse not near top)
+                if (window.mouseY >= window.toolbar_proximity_zone) {
+                    if (window.startToolbarHideTimer) {
+                        window.startToolbarHideTimer();
+                    }
+                }
+                if (originalOnClose) {
+                    originalOnClose.apply(this, args);
+                }
+            };
+        }
+    }
 })
 
 $(document).on('click', '.fullscreen-btn', async function (e) {
@@ -1822,6 +1849,109 @@ window.reset_window_size_and_position = (el_window)=>{
         top: 'calc(50% - 190px)',
         left: 'calc(50% - 340px)',
     });
+}
+
+// Toolbar auto-hide functionality
+function initToolbarAutoHide() {
+    // Disable auto-hide on mobile devices
+    if (isMobile && isMobile.phone) {
+        return;
+    }
+
+    // Initialize state variables
+    window.toolbar_hide_timeout = null;
+    window.toolbar_is_hidden = false;
+    window.toolbar_hide_delay = 2000; // 2 seconds
+    window.toolbar_proximity_zone = 50; // pixels from top edge
+
+    const $toolbar = $('.toolbar');
+    if ($toolbar.length === 0) return;
+
+    // Show toolbar function
+    window.showToolbar = function() {
+        if (window.toolbar_is_hidden) {
+            $toolbar.removeClass('toolbar-hidden');
+            window.toolbar_is_hidden = false;
+            // Adjust window container back to account for toolbar
+            $('.window-container').css({
+                'top': window.toolbar_height + 'px',
+                'transition': 'top 0.3s ease'
+            });
+        }
+        // Clear any pending hide timeout
+        if (window.toolbar_hide_timeout) {
+            clearTimeout(window.toolbar_hide_timeout);
+            window.toolbar_hide_timeout = null;
+        }
+    };
+
+    // Hide toolbar function
+    window.hideToolbar = function() {
+        if (!window.toolbar_is_hidden) {
+            $toolbar.addClass('toolbar-hidden');
+            window.toolbar_is_hidden = true;
+            // Adjust window container to fill space
+            $('.window-container').css({
+                'top': '0px',
+                'transition': 'top 0.3s ease'
+            });
+        }
+    };
+
+    // Start hide timer
+    function startHideTimer() {
+        // Clear existing timeout
+        if (window.toolbar_hide_timeout) {
+            clearTimeout(window.toolbar_hide_timeout);
+        }
+        // Set new timeout
+        window.toolbar_hide_timeout = setTimeout(() => {
+            window.hideToolbar();
+        }, window.toolbar_hide_delay);
+    }
+
+    // Expose startHideTimer for external use
+    window.startToolbarHideTimer = startHideTimer;
+
+    // Handle mouse proximity to top edge
+    function handleMouseProximity(mouseY) {
+        if (mouseY < window.toolbar_proximity_zone) {
+            // Mouse is near top edge - show toolbar
+            window.showToolbar();
+        } else {
+            // Mouse is away from top edge - start hide timer if toolbar is visible
+            if (!window.toolbar_is_hidden) {
+                startHideTimer();
+            }
+        }
+    }
+
+    // Keep toolbar visible when mouse enters toolbar area
+    $toolbar.on('mouseenter', function() {
+        window.showToolbar();
+    });
+
+    // Start hide timer when mouse leaves toolbar (if not near top edge)
+    $toolbar.on('mouseleave', function() {
+        if (window.mouseY >= window.toolbar_proximity_zone) {
+            startHideTimer();
+        }
+    });
+
+    // Keep toolbar visible when clicking on it or its children
+    $toolbar.on('click', function() {
+        window.showToolbar();
+    });
+
+    // Initial hide timer - start after page load
+    setTimeout(() => {
+        if (window.mouseY >= window.toolbar_proximity_zone) {
+            startHideTimer();
+        }
+    }, window.toolbar_hide_delay);
+
+    // Expose handleMouseProximity for use in mouse move handler
+    window.handleToolbarMouseProximity = handleMouseProximity;
 }
   
 export default UIDesktop;
