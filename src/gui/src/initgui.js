@@ -1215,6 +1215,10 @@ window.initgui = async function(options){
     // update mouse position coordinates
     $(document).mousemove(function(event){
         update_mouse_position(event.clientX, event.clientY);
+        // Handle toolbar auto-hide proximity detection
+        if (window.handleToolbarMouseProximity) {
+            window.handleToolbarMouseProximity(event.clientY);
+        }
     });
 
     //--------------------------------------------------------
